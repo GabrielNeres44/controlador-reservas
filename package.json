@@ -1,0 +1,11 @@
+{
+  "name": "controlador-reservas",
+  "version": "0.1.0",
+  "description": "Demo de controle de reservas para pousada",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  }
+}
+

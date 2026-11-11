@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pousada · Reservas</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>🏡 Pousada · Reservas</h1>
+  <nav>
+    <button data-tab="painel" class="active">Painel</button>
+    <button data-tab="calendario">Calendário</button>
+    <button data-tab="reservas">Reservas</button>
+    <button data-tab="quartos">Quartos</button>
+    <button data-tab="hospedes">Hóspedes</button>
+  </nav>
+</header>
+<div id="toast" hidden></div>
+<main>
+  <section id="painel"></section>
+
+  <section id="calendario" hidden>
+    <div class="bar">
+      <button id="prev">◀</button>
+      <input type="date" id="calStart">
+      <button id="next">▶</button>
+      <span class="muted">Janela de 21 dias</span>
+    </div>
+    <div id="calGrid" class="scroll"></div>
+  </section>
+
+  <section id="reservas" hidden>
+    <div class="card">
+      <h2>Nova reserva</h2>
+      <form id="resForm" class="grid">
+        <label>Hóspede <select name="guestId" required></select></label>
+        <label>Entrada <input type="date" name="checkIn" required></label>
+        <label>Saída <input type="date" name="checkOut" required></label>
+        <label>Pessoas <input type="number" name="people" min="1" value="1" required></label>
+        <label>Quarto (disponíveis no período) <select name="roomId" required></select></label>
+        <label>Observações <input name="notes"></label>
+        <button class="primary" id="resSubmit">Reservar</button>
+        <button type="button" id="resCancel" class="small" hidden>Cancelar edição</button>
+      </form>
+      <p id="resInfo" class="muted"></p>
+    </div>
+    <div class="card">
+      <h2>Reservas</h2>
+      <label class="inline">Filtro:
+        <select id="resFilter">
+          <option value="ativas">Ativas</option><option value="todas">Todas</option>
+          <option value="confirmada">Confirmadas</option><option value="hospedado">Hospedados</option>
+          <option value="finalizada">Finalizadas</option><option value="cancelada">Canceladas</option>
+        </select>
+      </label>
+      <div class="scroll"><table id="resTable"></table></div>
+    </div>
+  </section>
+
+  <section id="quartos" hidden>
+    <div class="card">
+      <h2>Novo quarto</h2>
+      <form id="roomForm" class="grid">
+        <label>Nome <input name="name" required></label>
+        <label>Capacidade <input type="number" name="capacity" min="1" value="2" required></label>
+        <label>Diária (R$) <input type="number" name="price" min="0" step="0.01" value="150" required></label>
+        <button class="primary">Cadastrar</button>
+      </form>
+    </div>
+    <div class="card"><div class="scroll"><table id="roomTable"></table></div></div>
+  </section>
+
+  <section id="hospedes" hidden>
+    <div class="card">
+      <h2>Novo hóspede</h2>
+      <form id="guestForm" class="grid">
+        <label>Nome <input name="name" required></label>
+        <label>Telefone <input name="phone"></label>
+        <label>E-mail <input type="email" name="email"></label>
+        <label>Documento <input name="document"></label>
+        <button class="primary">Cadastrar</button>
+      </form>
+    </div>
+    <div class="card"><div class="scroll"><table id="guestTable"></table></div></div>
+  </section>
+</main>
+<script src="app.js"></script>
+</body>
+</html>
+
