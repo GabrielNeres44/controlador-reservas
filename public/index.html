@@ -15,6 +15,7 @@
     <button data-tab="reservas">Reservas</button>
     <button data-tab="quartos">Quartos</button>
     <button data-tab="hospedes">Hóspedes</button>
+    <button data-tab="metodos">Métodos</button>
   </nav>
 </header>
 <div id="toast" hidden></div>
@@ -41,6 +42,7 @@
         <label>Pessoas <input type="number" name="people" min="1" value="1" required></label>
         <label>Quarto (disponíveis no período) <select name="roomId" required></select></label>
         <label>Valor total (R$) <input type="number" name="total" id="resTotal" step="0.01" min="0" placeholder="Padrão calculado"></label>
+        <label>Método de reserva <select name="channelId" required></select></label>
         <label>Observações <input name="notes"></label>
         <button class="primary" id="resSubmit">Reservar</button>
         <button type="button" id="resCancel" class="small" hidden>Cancelar edição</button>
@@ -85,6 +87,21 @@
       </form>
     </div>
     <div class="card"><div class="scroll"><table id="guestTable"></table></div></div>
+  </section>
+
+  <section id="metodos" hidden>
+    <div class="card">
+      <h2>Novo método de reserva</h2>
+      <form id="channelForm" class="grid">
+        <label>Nome <input name="name" required placeholder="Ex.: Airbnb"></label>
+        <button class="primary">Adicionar</button>
+      </form>
+    </div>
+    <div class="card">
+      <h2>Balanço de faturamento por método</h2>
+      <div class="scroll"><table id="channelTable"></table></div>
+      <p class="muted">Recebido = reservas finalizadas · Previsto = confirmadas/hospedadas · Canceladas não entram no faturamento.</p>
+    </div>
   </section>
 </main>
 <script src="app.js"></script>
