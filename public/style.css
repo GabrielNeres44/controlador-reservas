@@ -61,6 +61,14 @@ tbody tr:hover td, tr:hover > td { background:rgba(255,255,255,.02); }
 .badge.finalizada { background:rgba(138,146,166,.12); color:var(--muted); }
 .badge.cancelada { background:rgba(238,42,53,.12); color:var(--bad); border-color:rgba(238,42,53,.4); }
 .badge.manutencao { background:rgba(255,194,14,.12); color:var(--yellow); border-color:rgba(255,194,14,.4); }
+.badge.muted { background:rgba(138,146,166,.12); color:var(--muted); border-color:var(--line); }
+
+.sky-cell { display:inline-flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.sky-input { padding:5px 8px; font-size:12px; border-radius:8px; border:1px solid var(--line); }
+.sky-list { list-style:none; padding:0; margin:0; }
+.sky-item { display:flex; align-items:center; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--line); gap:12px; flex-wrap:wrap; }
+.sky-item:last-child { border-bottom:none; }
+.sky-actions { display:inline-flex; align-items:center; gap:8px; }
 .bar { display:flex; gap:8px; align-items:center; margin-bottom:14px; }
 .bar button { padding:7px 14px; border:1px solid var(--line); background:var(--card2); color:var(--ink); border-radius:10px; cursor:pointer; }
 .bar button:hover { border-color:var(--yellow); color:var(--yellow); }

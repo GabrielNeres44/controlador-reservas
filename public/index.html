@@ -69,10 +69,15 @@
         <label>Nome <input name="name" required></label>
         <label>Capacidade <input type="number" name="capacity" min="1" value="2" required></label>
         <label>Diária (R$) <input type="number" name="price" min="0" step="0.01" value="150" required></label>
+        <label>Vencimento SKY <input type="date" name="skyExpiration" title="Data de vencimento da assinatura SKY"></label>
         <button class="primary">Cadastrar</button>
       </form>
     </div>
-    <div class="card"><div class="scroll"><table id="roomTable"></table></div></div>
+    <div class="card">
+      <h2>Quartos e Assinaturas SKY</h2>
+      <div class="scroll"><table id="roomTable"></table></div>
+      <p class="muted">Dica: Selecione a data no calendário de cada quarto para definir o vencimento da assinatura da SKY, ou use "+30d" para renovar rapidamente.</p>
+    </div>
   </section>
 
   <section id="hospedes" hidden>

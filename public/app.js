@@ -11,6 +11,22 @@ const roomName = (id) => state.rooms.find((r) => r.id === id)?.name ?? '?';
 const guestName = (id) => state.guests.find((g) => g.id === id)?.name ?? '?';
 const channelName = (id) => state.channels.find((c) => c.id === id)?.name ?? '?';
 
+function skyStatus(dateStr) {
+  if (!dateStr) return { status: 'none', label: 'Não definida', cls: 'muted' };
+  const t = today();
+  if (dateStr < t) {
+    return { status: 'expired', label: `⚠️ Vencida (${fmt(dateStr)})`, cls: 'cancelada' };
+  }
+  if (dateStr === t) {
+    return { status: 'due_today', label: '⚠️ Vence hoje!', cls: 'manutencao' };
+  }
+  const diff = Math.round((new Date(dateStr + 'T00:00:00Z') - new Date(t + 'T00:00:00Z')) / 86400000);
+  if (diff <= 7) {
+    return { status: 'expiring', label: `⏳ Vence em ${diff}d (${fmt(dateStr)})`, cls: 'manutencao' };
+  }
+  return { status: 'active', label: `✓ Ativa até ${fmt(dateStr)}`, cls: 'ativo' };
+}
+
 let toastT;
 function toast(msg, err) {
   const t = $('#toast');
@@ -61,8 +77,38 @@ function renderPainel() {
       <div class="stat"><b>${money(revenue)}</b>Receita prevista (ativas)</div>
     </div>
     <div class="card"><h2>Chegadas hoje</h2>${list(arrivals, 'check-in')}</div>
-    <div class="card"><h2>Saídas hoje</h2>${list(departures, 'check-out')}</div>`;
+    <div class="card"><h2>Saídas hoje</h2>${list(departures, 'check-out')}</div>
+    <div class="card">
+      <h2>📡 Assinaturas SKY dos Quartos</h2>
+      ${state.rooms.length ? `
+        <ul class="sky-list">
+          ${state.rooms.map((r) => {
+            const s = skyStatus(r.skyExpiration);
+            return `<li class="sky-item">
+              <div>
+                <b>${esc(r.name)}</b>
+                ${r.skyExpiration ? `<span class="muted" style="margin-left:8px;">(Vencimento: ${fmt(r.skyExpiration)})</span>` : ''}
+              </div>
+              <div class="sky-actions">
+                <span class="badge ${s.cls}">${s.label}</span>
+                <button class="small" data-act="renew-sky" data-id="${r.id}" title="Renovar +30 dias">+30d</button>
+              </div>
+            </li>`;
+          }).join('')}
+        </ul>` : '<p class="muted">Nenhum quarto cadastrado.</p>'}
+    </div>`;
 }
+
+$('#painel').addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.act === 'renew-sky') {
+    const r = state.rooms.find((x) => x.id === b.dataset.id);
+    if (!r) return;
+    const baseDate = r.skyExpiration && r.skyExpiration >= today() ? r.skyExpiration : today();
+    const nextDate = addDays(baseDate, 30);
+    act(() => api('PUT', `/api/rooms/${r.id}`, { skyExpiration: nextDate }), `SKY (${r.name}) renovada até ${fmt(nextDate)} (+30 dias)!`);
+  }
+});
 
 // ---- Calendário ----
 const DAYS = 21;
@@ -254,17 +300,65 @@ $('#resTable').addEventListener('click', (e) => {
 $('#roomForm').addEventListener('submit', (e) => {
   e.preventDefault();
   const f = formData(e.target);
-  act(async () => { await api('POST', '/api/rooms', f); e.target.name.value = ''; }, 'Quarto cadastrado!');
+  const payload = { ...f };
+  if (!payload.skyExpiration) delete payload.skyExpiration;
+  act(async () => {
+    await api('POST', '/api/rooms', payload);
+    e.target.reset();
+  }, 'Quarto cadastrado!');
 });
+
 function renderRooms() {
-  $('#roomTable').innerHTML = '<tr><th>Nome</th><th>Capacidade</th><th>Diária</th><th>Status</th><th></th></tr>' +
-    state.rooms.map((r) => `<tr><td>${esc(r.name)}</td><td>${r.capacity}</td><td>${money(r.price)}</td>
-      <td><span class="badge ${r.status}">${r.status === 'ativo' ? 'disponível' : 'manutenção'}</span></td>
-      <td><button class="small" data-act="toggle" data-id="${r.id}" data-st="${r.status === 'ativo' ? 'manutencao' : 'ativo'}">${r.status === 'ativo' ? 'Pôr em manutenção' : 'Reativar'}</button>
-      <button class="small danger" data-act="del" data-id="${r.id}">Excluir</button></td></tr>`).join('');
+  $('#roomTable').innerHTML = '<tr><th>Nome</th><th>Capacidade</th><th>Diária</th><th>Status</th><th>Assinatura SKY (Vencimento)</th><th></th></tr>' +
+    (state.rooms.map((r) => {
+      const s = skyStatus(r.skyExpiration);
+      return `<tr>
+        <td><b>${esc(r.name)}</b></td>
+        <td>${r.capacity} pessoa(s)</td>
+        <td>${money(r.price)}</td>
+        <td><span class="badge ${r.status}">${r.status === 'ativo' ? 'disponível' : 'manutenção'}</span></td>
+        <td>
+          <div class="sky-cell">
+            <input type="date" class="sky-input" data-id="${r.id}" value="${r.skyExpiration || ''}" title="Selecione no calendário o vencimento da assinatura SKY">
+            <span class="badge ${s.cls}">${s.label}</span>
+            <button class="small" data-act="renew-sky" data-id="${r.id}" title="Renovar +30 dias">+30d</button>
+            ${r.skyExpiration ? `<button class="small danger" data-act="clear-sky" data-id="${r.id}" title="Limpar data da SKY">✕</button>` : ''}
+          </div>
+        </td>
+        <td>
+          <button class="small" data-act="toggle" data-id="${r.id}" data-st="${r.status === 'ativo' ? 'manutencao' : 'ativo'}">${r.status === 'ativo' ? 'Pôr em manutenção' : 'Reativar'}</button>
+          <button class="small danger" data-act="del" data-id="${r.id}">Excluir</button>
+        </td>
+      </tr>`;
+    }).join('') || '<tr><td colspan="6" class="muted">Nenhum quarto cadastrado.</td></tr>');
 }
+
+$('#roomTable').addEventListener('change', (e) => {
+  if (e.target.classList.contains('sky-input')) {
+    const id = e.target.dataset.id;
+    const r = state.rooms.find((x) => x.id === id);
+    const val = e.target.value ? e.target.value : null;
+    act(
+      () => api('PUT', `/api/rooms/${id}`, { skyExpiration: val }),
+      val ? `Assinatura SKY (${r?.name}) atualizada para ${fmt(val)}!` : `Assinatura SKY (${r?.name}) removida.`
+    );
+  }
+});
+
 $('#roomTable').addEventListener('click', (e) => {
   const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.act === 'renew-sky') {
+    const r = state.rooms.find((x) => x.id === b.dataset.id);
+    if (!r) return;
+    const baseDate = r.skyExpiration && r.skyExpiration >= today() ? r.skyExpiration : today();
+    const nextDate = addDays(baseDate, 30);
+    act(() => api('PUT', `/api/rooms/${r.id}`, { skyExpiration: nextDate }), `SKY (${r.name}) renovada até ${fmt(nextDate)} (+30 dias)!`);
+  }
+  if (b.dataset.act === 'clear-sky') {
+    const r = state.rooms.find((x) => x.id === b.dataset.id);
+    if (!r) return;
+    act(() => api('PUT', `/api/rooms/${r.id}`, { skyExpiration: null }), `Assinatura SKY (${r.name}) removida.`);
+  }
   if (b.dataset.act === 'toggle') act(() => api('PUT', `/api/rooms/${b.dataset.id}`, { status: b.dataset.st }));
   if (b.dataset.act === 'del' && confirm('Excluir quarto e seu histórico de reservas?')) act(() => api('DELETE', `/api/rooms/${b.dataset.id}`), 'Quarto excluído.');
 });
