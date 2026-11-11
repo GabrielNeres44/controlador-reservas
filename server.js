@@ -35,7 +35,20 @@ function save(db) {
   fs.writeFileSync(tmp, JSON.stringify(db, null, 2));
   fs.renameSync(tmp, DB_FILE);
 }
+const DEFAULT_CHANNELS = ['Reserva direta', 'Booking', 'Agência'];
 const db = load();
+// Migração: garante os métodos padrão e associa reservas antigas à 'Reserva direta'.
+{
+  let dirty = false;
+  if (!Array.isArray(db.channels) || !db.channels.length) {
+    db.channels = DEFAULT_CHANNELS.map((name) => ({ id: uid(), name }));
+    dirty = true;
+  }
+  for (const r of db.reservations) {
+    if (!db.channels.some((c) => c.id === r.channelId)) { r.channelId = db.channels[0].id; dirty = true; }
+  }
+  if (dirty) save(db);
+}
 
 const need = (v, msg) => {
   if (typeof v !== 'string' || !v.trim()) throw new L.ValidationError(msg);
@@ -93,6 +106,33 @@ route('DELETE', '/api/rooms/:id', ({ params }) => {
   return { ok: true };
 });
 
+// Métodos de reserva (canais)
+route('GET', '/api/channels', () => db.channels);
+route('POST', '/api/channels', ({ body }) => {
+  const name = need(body.name, 'Nome do método é obrigatório.');
+  if (db.channels.some((c) => c.name.toLowerCase() === name.toLowerCase())) throw new L.ValidationError('Já existe um método com esse nome.', 409);
+  const c = { id: uid(), name };
+  db.channels.push(c);
+  save(db);
+  return [201, c];
+});
+route('PUT', '/api/channels/:id', ({ params, body }) => {
+  const c = find(db.channels, params[0], 'Método');
+  const name = need(body.name, 'Nome inválido.');
+  if (db.channels.some((x) => x.id !== c.id && x.name.toLowerCase() === name.toLowerCase())) throw new L.ValidationError('Já existe um método com esse nome.', 409);
+  c.name = name;
+  save(db);
+  return c;
+});
+route('DELETE', '/api/channels/:id', ({ params }) => {
+  const c = find(db.channels, params[0], 'Método');
+  if (db.reservations.some((r) => r.channelId === c.id)) throw new L.ValidationError('Método possui reservas associadas.', 409);
+  if (db.channels.length <= 1) throw new L.ValidationError('Mantenha ao menos um método.', 409);
+  db.channels = db.channels.filter((x) => x.id !== c.id);
+  save(db);
+  return { ok: true };
+});
+
 // Hóspedes
 route('GET', '/api/guests', () => db.guests);
 route('POST', '/api/guests', ({ body }) => {
@@ -127,12 +167,14 @@ route('DELETE', '/api/guests/:id', ({ params }) => {
 route('GET', '/api/reservations', () => db.reservations);
 route('POST', '/api/reservations', ({ body }) => {
   const { people, total } = L.validateReservation(db, body);
+  if (body.channelId) find(db.channels, body.channelId, 'Método');
   const r = {
     id: uid(),
     roomId: body.roomId,
     guestId: body.guestId,
     checkIn: body.checkIn,
     checkOut: body.checkOut,
+    channelId: body.channelId || db.channels[0].id,
     people,
     total,
     notes: String(body.notes || '').trim(),
@@ -145,8 +187,9 @@ route('POST', '/api/reservations', ({ body }) => {
 });
 route('PUT', '/api/reservations/:id', ({ params, body }) => {
   const r = find(db.reservations, params[0], 'Reserva');
+  if (body.channelId !== undefined) find(db.channels, body.channelId, 'Método');
   if (body.status !== undefined && !RES_STATUS.includes(body.status)) throw new L.ValidationError('Status inválido.');
-  const allowed = ['roomId', 'guestId', 'checkIn', 'checkOut', 'people', 'total', 'notes', 'status'];
+  const allowed = ['roomId', 'guestId', 'checkIn', 'checkOut', 'people', 'total', 'notes', 'status', 'channelId'];
   const next = { ...r };
   for (const k of allowed) if (body[k] !== undefined) next[k] = body[k];
 
