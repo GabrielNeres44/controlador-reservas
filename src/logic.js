@@ -61,7 +61,18 @@ function validateReservation(db, input, ignoreId = null) {
       409
     );
   }
-  return { room, people, total: nights(checkIn, checkOut) * room.price };
+
+  const defaultTotal = nights(checkIn, checkOut) * room.price;
+  let total = defaultTotal;
+  if (input.total !== undefined && input.total !== null && input.total !== '') {
+    const customTotal = Number(input.total);
+    if (!Number.isFinite(customTotal) || customTotal < 0) {
+      throw new ValidationError('Valor total da reserva inválido.');
+    }
+    total = customTotal;
+  }
+
+  return { room, people, total };
 }
 
 function availableRooms(db, checkIn, checkOut, people = 1, ignoreId = null) {

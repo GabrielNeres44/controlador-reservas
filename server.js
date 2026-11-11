@@ -146,13 +146,30 @@ route('POST', '/api/reservations', ({ body }) => {
 route('PUT', '/api/reservations/:id', ({ params, body }) => {
   const r = find(db.reservations, params[0], 'Reserva');
   if (body.status !== undefined && !RES_STATUS.includes(body.status)) throw new L.ValidationError('Status inválido.');
-  const allowed = ['roomId', 'guestId', 'checkIn', 'checkOut', 'people', 'notes', 'status'];
+  const allowed = ['roomId', 'guestId', 'checkIn', 'checkOut', 'people', 'total', 'notes', 'status'];
   const next = { ...r };
   for (const k of allowed) if (body[k] !== undefined) next[k] = body[k];
+
+  if (body.total === '' || body.total === null) {
+    delete next.total;
+  }
+
   if (L.isActive(next)) {
+    const datesOrRoomChanged =
+      (body.roomId !== undefined && body.roomId !== r.roomId) ||
+      (body.checkIn !== undefined && body.checkIn !== r.checkIn) ||
+      (body.checkOut !== undefined && body.checkOut !== r.checkOut);
+
+    if (body.total === undefined && datesOrRoomChanged) {
+      delete next.total;
+    }
     const { people, total } = L.validateReservation(db, next, r.id);
     next.people = people;
     next.total = total;
+  } else if (body.total !== undefined && body.total !== '' && body.total !== null) {
+    const customTotal = Number(body.total);
+    if (!Number.isFinite(customTotal) || customTotal < 0) throw new L.ValidationError('Valor total da reserva inválido.');
+    next.total = customTotal;
   }
   Object.assign(r, next);
   save(db);

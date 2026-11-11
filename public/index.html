@@ -33,13 +33,14 @@
 
   <section id="reservas" hidden>
     <div class="card">
-      <h2>Nova reserva</h2>
+      <h2 id="resFormTitle">Nova reserva</h2>
       <form id="resForm" class="grid">
         <label>Hóspede <select name="guestId" required></select></label>
         <label>Entrada <input type="date" name="checkIn" required></label>
         <label>Saída <input type="date" name="checkOut" required></label>
         <label>Pessoas <input type="number" name="people" min="1" value="1" required></label>
         <label>Quarto (disponíveis no período) <select name="roomId" required></select></label>
+        <label>Valor total (R$) <input type="number" name="total" id="resTotal" step="0.01" min="0" placeholder="Padrão calculado"></label>
         <label>Observações <input name="notes"></label>
         <button class="primary" id="resSubmit">Reservar</button>
         <button type="button" id="resCancel" class="small" hidden>Cancelar edição</button>

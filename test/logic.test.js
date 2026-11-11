@@ -45,6 +45,21 @@ test('editar ignora a própria reserva; total calculado', () => {
   assert.strictEqual(r.total, 300);
 });
 
+test('permite customizar total com promoção ou desconto', () => {
+  const db = mkdb();
+  // Padrão seria 3 noites * 100 = 300
+  const r1 = L.validateReservation(db, { ...base, checkIn: '2026-12-01', checkOut: '2026-12-04', total: 200 });
+  assert.strictEqual(r1.total, 200);
+
+  // Sem total informado, calcula automático
+  const r2 = L.validateReservation(db, { ...base, checkIn: '2026-12-01', checkOut: '2026-12-04' });
+  assert.strictEqual(r2.total, 300);
+
+  // Rejeita valores negativos ou inválidos
+  assert.throws(() => L.validateReservation(db, { ...base, checkIn: '2026-12-01', checkOut: '2026-12-04', total: -50 }), /Valor total da reserva inválido/);
+  assert.throws(() => L.validateReservation(db, { ...base, checkIn: '2026-12-01', checkOut: '2026-12-04', total: 'invalido' }), /Valor total da reserva inválido/);
+});
+
 test('availableRooms', () => {
   const db = mkdb();
   assert.strictEqual(L.availableRooms(db, '2026-12-12', '2026-12-13').length, 0);
