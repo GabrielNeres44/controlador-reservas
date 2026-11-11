@@ -84,3 +84,4 @@ test('storage: fallback para tabelas diretas quando RPC não existe', async () =
     global.fetch = origFetch;
   }
 });
+
