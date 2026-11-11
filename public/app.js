@@ -1,6 +1,6 @@
 'use strict';
 const $ = (s, r = document) => r.querySelector(s);
-const state = { rooms: [], guests: [], reservations: [] };
+const state = { rooms: [], guests: [], reservations: [], channels: [] };
 const money = (v) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const fmt = (d) => d.split('-').reverse().join('/');
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -9,6 +9,7 @@ const addDays = (s, n) => { const d = new Date(s + 'T00:00:00Z'); d.setUTCDate(d
 const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const roomName = (id) => state.rooms.find((r) => r.id === id)?.name ?? '?';
 const guestName = (id) => state.guests.find((g) => g.id === id)?.name ?? '?';
+const channelName = (id) => state.channels.find((c) => c.id === id)?.name ?? '?';
 
 let toastT;
 function toast(msg, err) {
@@ -27,7 +28,7 @@ async function act(fn, ok) {
   try { await fn(); if (ok) toast(ok); await refresh(); } catch (e) { toast(e.message, true); }
 }
 async function refresh() {
-  [state.rooms, state.guests, state.reservations] = await Promise.all([api('GET', '/api/rooms'), api('GET', '/api/guests'), api('GET', '/api/reservations')]);
+  [state.rooms, state.guests, state.reservations, state.channels] = await Promise.all([api('GET', '/api/rooms'), api('GET', '/api/guests'), api('GET', '/api/reservations'), api('GET', '/api/channels')]);
   render();
 }
 
@@ -188,6 +189,7 @@ function startEdit(id) {
   if (!r) return;
   editingId = id;
   resForm.guestId.value = r.guestId;
+  resForm.channelId.value = r.channelId;
   resForm.checkIn.value = r.checkIn;
   resForm.checkOut.value = r.checkOut;
   resForm.people.value = r.people;
@@ -224,10 +226,10 @@ function renderResTable() {
     .filter((r) => f === 'todas' ? true : f === 'ativas' ? r.status === 'confirmada' || r.status === 'hospedado' : r.status === f)
     .sort((a, b) => a.checkIn.localeCompare(b.checkIn));
   const btn = (id, st, label, cls = '') => `<button class="small ${cls}" data-act="status" data-id="${id}" data-st="${st}">${label}</button>`;
-  $('#resTable').innerHTML = '<tr><th>Hóspede</th><th>Quarto</th><th>Entrada</th><th>Saída</th><th>Pessoas</th><th>Total</th><th>Status</th><th></th></tr>' +
+  $('#resTable').innerHTML = '<tr><th>Hóspede</th><th>Método</th><th>Quarto</th><th>Entrada</th><th>Saída</th><th>Pessoas</th><th>Total</th><th>Status</th><th></th></tr>' +
     (rows.map((r) => `<tr>
       <td>${esc(guestName(r.guestId))}${r.notes ? ` <span class="muted" title="${esc(r.notes)}">📝</span>` : ''}</td>
-      <td>${esc(roomName(r.roomId))}</td><td>${fmt(r.checkIn)}</td><td>${fmt(r.checkOut)}</td>
+      <td>${esc(channelName(r.channelId))}</td><td>${esc(roomName(r.roomId))}</td><td>${fmt(r.checkIn)}</td><td>${fmt(r.checkOut)}</td>
       <td>${r.people}</td>
       <td>${r.id === priceEditId ? `<input type="number" class="price-input" id="priceInput" min="0" step="0.01" value="${r.total}" style="width:110px"> <button class="small" data-act="price-save" data-id="${r.id}">Salvar</button><button class="small" data-act="price-cancel">✕</button>` : `${money(r.total)} <button class="small" data-act="change-price" data-id="${r.id}" title="Alterar valor da reserva (descontos, promoções)">✏️ Alterar valor</button>`}</td>
       <td><span class="badge ${r.status}">${r.status}</span></td>
@@ -236,7 +238,7 @@ function renderResTable() {
           ${r.status === 'cancelada' ? btn(r.id, 'confirmada', 'Reativar') : ''}
           ${r.status === 'confirmada' || r.status === 'hospedado' ? `<button class="small" data-act="edit" data-id="${r.id}">Editar</button>` : ''}
           <button class="small danger" data-act="del" data-id="${r.id}">Excluir</button></td></tr>`).join('') ||
-      '<tr><td colspan="8" class="muted">Nenhuma reserva.</td></tr>');
+      '<tr><td colspan="9" class="muted">Nenhuma reserva.</td></tr>');
 }
 $('#resTable').addEventListener('click', (e) => {
   const b = e.target.closest('button'); if (!b) return;
@@ -286,6 +288,9 @@ $('#guestTable').addEventListener('click', (e) => {
 });
 
 function renderGuestSelect() {
+  const csel = resForm.channelId, cprev = csel.value;
+  csel.innerHTML = state.channels.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  if (state.channels.some((c) => c.id === cprev)) csel.value = cprev;
   const sel = resForm.guestId, prev = sel.value;
   sel.innerHTML = state.guests.length
     ? state.guests.map((g) => `<option value="${g.id}">${esc(g.name)}</option>`).join('')
@@ -293,8 +298,39 @@ function renderGuestSelect() {
   if (state.guests.some((g) => g.id === prev)) sel.value = prev;
 }
 
+// ---- Métodos de reserva ----
+$('#channelForm').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const f = formData(e.target);
+  act(async () => { await api('POST', '/api/channels', f); e.target.reset(); }, 'Método adicionado!');
+});
+function renderChannels() {
+  const rows = state.channels.map((c) => {
+    const rs = state.reservations.filter((r) => r.channelId === c.id);
+    const sum = (st) => rs.filter((r) => st.includes(r.status)).reduce((s, r) => s + (r.total || 0), 0);
+    const received = sum(['finalizada']), expected = sum(['confirmada', 'hospedado']);
+    return { c, count: rs.length, canceled: rs.filter((r) => r.status === 'cancelada').length, received, expected, total: received + expected, used: rs.length > 0 };
+  });
+  const grand = rows.reduce((s, x) => s + x.total, 0);
+  const tot = (k) => rows.reduce((s, x) => s + x[k], 0);
+  $('#channelTable').innerHTML = '<tr><th>Método</th><th>Reservas</th><th>Canceladas</th><th>Recebido</th><th>Previsto</th><th>Total</th><th>% do faturamento</th><th></th></tr>' +
+    rows.map((x) => `<tr><td>${esc(x.c.name)}</td><td>${x.count}</td><td>${x.canceled}</td><td>${money(x.received)}</td><td>${money(x.expected)}</td>
+      <td><b>${money(x.total)}</b></td><td>${grand ? Math.round((x.total / grand) * 100) : 0}%</td>
+      <td><button class="small" data-act="rename" data-id="${x.c.id}">Renomear</button>
+      <button class="small danger" data-act="del" data-id="${x.c.id}" ${x.used ? 'disabled title="Possui reservas"' : ''}>Excluir</button></td></tr>`).join('') +
+    `<tr><td><b>Total</b></td><td>${tot('count')}</td><td>${tot('canceled')}</td><td><b>${money(tot('received'))}</b></td><td><b>${money(tot('expected'))}</b></td><td><b>${money(grand)}</b></td><td>100%</td><td></td></tr>`;
+}
+$('#channelTable').addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.act === 'rename') {
+    const name = prompt('Novo nome do método:', channelName(b.dataset.id));
+    if (name && name.trim()) act(() => api('PUT', `/api/channels/${b.dataset.id}`, { name }), 'Método renomeado.');
+  }
+  if (b.dataset.act === 'del' && confirm('Excluir este método?')) act(() => api('DELETE', `/api/channels/${b.dataset.id}`), 'Método excluído.');
+});
+
 function render() {
-  renderPainel(); renderCal(); renderResTable(); renderRooms(); renderGuests(); renderGuestSelect(); updateAvailable();
+  renderChannels();   renderPainel(); renderCal(); renderResTable(); renderRooms(); renderGuests(); renderGuestSelect(); updateAvailable();
 }
 
 resForm.checkIn.value = today();
