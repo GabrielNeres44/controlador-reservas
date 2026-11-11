@@ -5,10 +5,15 @@ const crypto = require('node:crypto');
 
 const uid = () => crypto.randomUUID();
 const DEFAULT_CHANNELS = ['Reserva direta', 'Booking', 'Agência'];
+const DEFAULT_SUPABASE_URL = 'https://umnnoanezyuhpwhhxguz.supabase.co';
 const DEFAULT_PUBLISHABLE_KEY = 'sb_publishable_iRMTYBANS1LUz6bD-MFZPQ_WmY-3TXg';
 
 function getSupabaseConfig() {
-  const rawUrl = (process.env.SUPABASE_URL || '').trim().replace(/\/+$/, '');
+  if (process.env.SUPABASE_URL === 'false' || process.env.SUPABASE_DISABLED === '1') return null;
+  // Quando DB_FILE é definido explicitamente (ex: testes automatizados) e SUPABASE_URL não foi forçada, usa arquivo local
+  if (process.env.DB_FILE && !process.env.SUPABASE_URL) return null;
+
+  const rawUrl = (process.env.SUPABASE_URL || DEFAULT_SUPABASE_URL).trim().replace(/\/+$/, '');
   const key = (
     process.env.SUPABASE_SERVICE_ROLE_KEY ||
     process.env.SUPABASE_SECRET_KEY ||
@@ -267,3 +272,4 @@ module.exports = {
   saveToSupabase,
   normalizeDb,
 };
+
