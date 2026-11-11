@@ -73,12 +73,18 @@ const route = (method, pattern, fn) =>
 // Quartos
 route('GET', '/api/rooms', () => db.rooms);
 route('POST', '/api/rooms', ({ body }) => {
+  let skyExpiration = null;
+  if (body.skyExpiration) {
+    L.parseDate(body.skyExpiration);
+    skyExpiration = body.skyExpiration;
+  }
   const room = {
     id: uid(),
     name: need(body.name, 'Nome do quarto é obrigatório.'),
     capacity: Math.floor(num(body.capacity, 'Capacidade inválida.', 1)),
     price: num(body.price, 'Diária inválida.', 0),
     status: 'ativo',
+    skyExpiration,
   };
   if (db.rooms.some((r) => r.name.toLowerCase() === room.name.toLowerCase())) throw new L.ValidationError('Já existe um quarto com esse nome.', 409);
   db.rooms.push(room);
@@ -93,6 +99,14 @@ route('PUT', '/api/rooms/:id', ({ params, body }) => {
   if (body.status !== undefined) {
     if (!ROOM_STATUS.includes(body.status)) throw new L.ValidationError('Status inválido.');
     room.status = body.status;
+  }
+  if (body.skyExpiration !== undefined) {
+    if (body.skyExpiration === null || body.skyExpiration === '') {
+      room.skyExpiration = null;
+    } else {
+      L.parseDate(body.skyExpiration);
+      room.skyExpiration = body.skyExpiration;
+    }
   }
   save(db);
   return room;

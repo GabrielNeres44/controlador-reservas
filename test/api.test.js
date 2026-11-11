@@ -87,4 +87,16 @@ test('API: métodos de reserva', async (t) => {
   assert.strictEqual((await j('DELETE', `/api/channels/${air.data.id}`)).status, 409);
   await j('DELETE', `/api/reservations/${res.data.id}`);
   assert.strictEqual((await j('DELETE', `/api/channels/${air.data.id}`)).status, 200);
+
+  // Assinatura SKY no quarto
+  const skyRoom = (await j('POST', '/api/rooms', { name: 'SKY Room', capacity: 2, price: 120, skyExpiration: '2026-12-31' })).data;
+  assert.strictEqual(skyRoom.skyExpiration, '2026-12-31');
+
+  // Atualizar vencimento da SKY
+  const updatedSky = (await j('PUT', `/api/rooms/${skyRoom.id}`, { skyExpiration: '2027-01-30' })).data;
+  assert.strictEqual(updatedSky.skyExpiration, '2027-01-30');
+
+  // Limpar vencimento da SKY
+  const clearedSky = (await j('PUT', `/api/rooms/${skyRoom.id}`, { skyExpiration: null })).data;
+  assert.strictEqual(clearedSky.skyExpiration, null);
 });

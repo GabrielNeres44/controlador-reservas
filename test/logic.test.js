@@ -66,3 +66,28 @@ test('availableRooms', () => {
   assert.strictEqual(L.availableRooms(db, '2026-12-15', '2026-12-16').length, 1);
 });
 
+test('getSkyStatus: calcula status e prazos da assinatura SKY', () => {
+  assert.deepStrictEqual(L.getSkyStatus(null), { status: 'none', label: 'Não definida', daysRemaining: null });
+  assert.deepStrictEqual(L.getSkyStatus(''), { status: 'none', label: 'Não definida', daysRemaining: null });
+
+  // Vencida
+  const exp = L.getSkyStatus('2026-11-01', '2026-11-10');
+  assert.strictEqual(exp.status, 'expired');
+  assert.strictEqual(exp.daysRemaining, -9);
+
+  // Vence hoje
+  const today = L.getSkyStatus('2026-11-10', '2026-11-10');
+  assert.strictEqual(today.status, 'due_today');
+  assert.strictEqual(today.daysRemaining, 0);
+
+  // Vence em breve (<= 7 dias)
+  const soon = L.getSkyStatus('2026-11-15', '2026-11-10');
+  assert.strictEqual(soon.status, 'expiring');
+  assert.strictEqual(soon.daysRemaining, 5);
+
+  // Ativa (> 7 dias)
+  const active = L.getSkyStatus('2026-12-10', '2026-11-10');
+  assert.strictEqual(active.status, 'active');
+  assert.strictEqual(active.daysRemaining, 30);
+});
+

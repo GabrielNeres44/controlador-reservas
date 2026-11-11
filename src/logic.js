@@ -84,5 +84,16 @@ function availableRooms(db, checkIn, checkOut, people = 1, ignoreId = null) {
   );
 }
 
-module.exports = { ValidationError, parseDate, nights, overlaps, isActive, findConflict, validateReservation, availableRooms };
+function getSkyStatus(expirationDate, referenceDate) {
+  if (!expirationDate) return { status: 'none', label: 'Não definida', daysRemaining: null };
+  const exp = parseDate(expirationDate);
+  const ref = referenceDate ? parseDate(referenceDate) : parseDate(new Date().toISOString().slice(0, 10));
+  const diff = Math.round((exp - ref) / 86400000);
+  if (diff < 0) return { status: 'expired', label: `Vencida (${Math.abs(diff)}d atrás)`, daysRemaining: diff };
+  if (diff === 0) return { status: 'due_today', label: 'Vence hoje!', daysRemaining: 0 };
+  if (diff <= 7) return { status: 'expiring', label: `Vence em ${diff}d`, daysRemaining: diff };
+  return { status: 'active', label: `Ativa (${diff}d)`, daysRemaining: diff };
+}
+
+module.exports = { ValidationError, parseDate, nights, overlaps, isActive, findConflict, validateReservation, availableRooms, getSkyStatus };
 
