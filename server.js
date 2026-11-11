@@ -1,10 +1,11 @@
 'use strict';
-// Servidor HTTP sem dependências externas. Persistência em data/db.json.
+// Servidor HTTP sem dependências externas. Persistência em Supabase (quando SUPABASE_URL está definida) com fallback local em data/db.json.
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const L = require('./src/logic');
+const storage = require('./src/storage');
 
 const PORT = process.env.PORT || 3000;
 const DATA_DIR = path.join(__dirname, 'data');
@@ -15,39 +16,49 @@ const uid = () => crypto.randomUUID();
 const ROOM_STATUS = ['ativo', 'manutencao'];
 const RES_STATUS = ['confirmada', 'hospedado', 'finalizada', 'cancelada'];
 
-function load() {
-  if (fs.existsSync(DB_FILE)) return JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
-  const db = {
-    rooms: [
-      { id: uid(), name: 'Quarto 101', capacity: 2, price: 180, status: 'ativo' },
-      { id: uid(), name: 'Quarto 102', capacity: 3, price: 240, status: 'ativo' },
-      { id: uid(), name: 'Suíte Família', capacity: 5, price: 420, status: 'ativo' },
-    ],
-    guests: [],
-    reservations: [],
-  };
-  save(db);
-  return db;
-}
-function save(db) {
-  fs.mkdirSync(path.dirname(DB_FILE), { recursive: true });
-  const tmp = DB_FILE + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(db, null, 2));
-  fs.renameSync(tmp, DB_FILE);
-}
-const DEFAULT_CHANNELS = ['Reserva direta', 'Booking', 'Agência'];
-const db = load();
-// Migração: garante os métodos padrão e associa reservas antigas à 'Reserva direta'.
-{
-  let dirty = false;
-  if (!Array.isArray(db.channels) || !db.channels.length) {
-    db.channels = DEFAULT_CHANNELS.map((name) => ({ id: uid(), name }));
-    dirty = true;
+const db = storage.loadFromFile(DB_FILE);
+let initPromise = null;
+
+async function ensureReady() {
+  const cfg = storage.getSupabaseConfig();
+  if (!cfg) return;
+  if (!initPromise) {
+    initPromise = (async () => {
+      try {
+        const remote = await storage.fetchFromSupabase(cfg);
+        const isEmpty =
+          (!remote.rooms || remote.rooms.length === 0) &&
+          (!remote.guests || remote.guests.length === 0) &&
+          (!remote.reservations || remote.reservations.length === 0);
+
+        if (isEmpty) {
+          await storage.saveToSupabase(cfg, db);
+          console.log('Supabase vazio: dados iniciais sincronizados com sucesso.');
+        } else {
+          db.rooms = remote.rooms || [];
+          db.channels = remote.channels || [];
+          db.guests = remote.guests || [];
+          db.reservations = remote.reservations || [];
+          const dirty = storage.normalizeDb(db);
+          storage.saveToFile(DB_FILE, db);
+          if (dirty) await storage.saveToSupabase(cfg, db);
+          console.log('Dados carregados do Supabase com sucesso.');
+        }
+      } catch (err) {
+        initPromise = null;
+        console.error('Erro ao sincronizar inicialmente com o Supabase:', err.message);
+      }
+    })();
   }
-  for (const r of db.reservations) {
-    if (!db.channels.some((c) => c.id === r.channelId)) { r.channelId = db.channels[0].id; dirty = true; }
+  await initPromise;
+}
+
+async function save(currentDb) {
+  storage.saveToFile(DB_FILE, currentDb);
+  const cfg = storage.getSupabaseConfig();
+  if (cfg) {
+    await storage.saveToSupabase(cfg, currentDb);
   }
-  if (dirty) save(db);
 }
 
 const need = (v, msg) => {
@@ -70,9 +81,15 @@ const routes = [];
 const route = (method, pattern, fn) =>
   routes.push({ method, re: new RegExp('^' + pattern.replace(/:\w+/g, '([^/]+)') + '$'), fn });
 
+// Status do armazenamento
+route('GET', '/api/health', () => ({
+  ok: true,
+  storage: storage.getSupabaseConfig() ? 'supabase' : 'local_file',
+}));
+
 // Quartos
 route('GET', '/api/rooms', () => db.rooms);
-route('POST', '/api/rooms', ({ body }) => {
+route('POST', '/api/rooms', async ({ body }) => {
   let skyExpiration = null;
   if (body.skyExpiration) {
     L.parseDate(body.skyExpiration);
@@ -88,10 +105,10 @@ route('POST', '/api/rooms', ({ body }) => {
   };
   if (db.rooms.some((r) => r.name.toLowerCase() === room.name.toLowerCase())) throw new L.ValidationError('Já existe um quarto com esse nome.', 409);
   db.rooms.push(room);
-  save(db);
+  await save(db);
   return [201, room];
 });
-route('PUT', '/api/rooms/:id', ({ params, body }) => {
+route('PUT', '/api/rooms/:id', async ({ params, body }) => {
   const room = find(db.rooms, params[0], 'Quarto');
   if (body.name !== undefined) room.name = need(body.name, 'Nome inválido.');
   if (body.capacity !== undefined) room.capacity = Math.floor(num(body.capacity, 'Capacidade inválida.', 1));
@@ -108,48 +125,48 @@ route('PUT', '/api/rooms/:id', ({ params, body }) => {
       room.skyExpiration = body.skyExpiration;
     }
   }
-  save(db);
+  await save(db);
   return room;
 });
-route('DELETE', '/api/rooms/:id', ({ params }) => {
+route('DELETE', '/api/rooms/:id', async ({ params }) => {
   const room = find(db.rooms, params[0], 'Quarto');
   if (db.reservations.some((r) => r.roomId === room.id && L.isActive(r))) throw new L.ValidationError('Quarto possui reservas ativas.', 409);
   db.rooms = db.rooms.filter((r) => r.id !== room.id);
   db.reservations = db.reservations.filter((r) => r.roomId !== room.id);
-  save(db);
+  await save(db);
   return { ok: true };
 });
 
 // Métodos de reserva (canais)
 route('GET', '/api/channels', () => db.channels);
-route('POST', '/api/channels', ({ body }) => {
+route('POST', '/api/channels', async ({ body }) => {
   const name = need(body.name, 'Nome do método é obrigatório.');
   if (db.channels.some((c) => c.name.toLowerCase() === name.toLowerCase())) throw new L.ValidationError('Já existe um método com esse nome.', 409);
   const c = { id: uid(), name };
   db.channels.push(c);
-  save(db);
+  await save(db);
   return [201, c];
 });
-route('PUT', '/api/channels/:id', ({ params, body }) => {
+route('PUT', '/api/channels/:id', async ({ params, body }) => {
   const c = find(db.channels, params[0], 'Método');
   const name = need(body.name, 'Nome inválido.');
   if (db.channels.some((x) => x.id !== c.id && x.name.toLowerCase() === name.toLowerCase())) throw new L.ValidationError('Já existe um método com esse nome.', 409);
   c.name = name;
-  save(db);
+  await save(db);
   return c;
 });
-route('DELETE', '/api/channels/:id', ({ params }) => {
+route('DELETE', '/api/channels/:id', async ({ params }) => {
   const c = find(db.channels, params[0], 'Método');
   if (db.reservations.some((r) => r.channelId === c.id)) throw new L.ValidationError('Método possui reservas associadas.', 409);
   if (db.channels.length <= 1) throw new L.ValidationError('Mantenha ao menos um método.', 409);
   db.channels = db.channels.filter((x) => x.id !== c.id);
-  save(db);
+  await save(db);
   return { ok: true };
 });
 
 // Hóspedes
 route('GET', '/api/guests', () => db.guests);
-route('POST', '/api/guests', ({ body }) => {
+route('POST', '/api/guests', async ({ body }) => {
   const g = {
     id: uid(),
     name: need(body.name, 'Nome do hóspede é obrigatório.'),
@@ -158,28 +175,28 @@ route('POST', '/api/guests', ({ body }) => {
     document: String(body.document || '').trim(),
   };
   db.guests.push(g);
-  save(db);
+  await save(db);
   return [201, g];
 });
-route('PUT', '/api/guests/:id', ({ params, body }) => {
+route('PUT', '/api/guests/:id', async ({ params, body }) => {
   const g = find(db.guests, params[0], 'Hóspede');
   if (body.name !== undefined) g.name = need(body.name, 'Nome inválido.');
   for (const k of ['phone', 'email', 'document']) if (body[k] !== undefined) g[k] = String(body[k]).trim();
-  save(db);
+  await save(db);
   return g;
 });
-route('DELETE', '/api/guests/:id', ({ params }) => {
+route('DELETE', '/api/guests/:id', async ({ params }) => {
   const g = find(db.guests, params[0], 'Hóspede');
   if (db.reservations.some((r) => r.guestId === g.id && L.isActive(r))) throw new L.ValidationError('Hóspede possui reservas ativas.', 409);
   db.guests = db.guests.filter((x) => x.id !== g.id);
   db.reservations = db.reservations.filter((r) => r.guestId !== g.id);
-  save(db);
+  await save(db);
   return { ok: true };
 });
 
 // Reservas
 route('GET', '/api/reservations', () => db.reservations);
-route('POST', '/api/reservations', ({ body }) => {
+route('POST', '/api/reservations', async ({ body }) => {
   const { people, total } = L.validateReservation(db, body);
   if (body.channelId) find(db.channels, body.channelId, 'Método');
   const r = {
@@ -196,10 +213,10 @@ route('POST', '/api/reservations', ({ body }) => {
     createdAt: new Date().toISOString(),
   };
   db.reservations.push(r);
-  save(db);
+  await save(db);
   return [201, r];
 });
-route('PUT', '/api/reservations/:id', ({ params, body }) => {
+route('PUT', '/api/reservations/:id', async ({ params, body }) => {
   const r = find(db.reservations, params[0], 'Reserva');
   if (body.channelId !== undefined) find(db.channels, body.channelId, 'Método');
   if (body.status !== undefined && !RES_STATUS.includes(body.status)) throw new L.ValidationError('Status inválido.');
@@ -229,13 +246,13 @@ route('PUT', '/api/reservations/:id', ({ params, body }) => {
     next.total = customTotal;
   }
   Object.assign(r, next);
-  save(db);
+  await save(db);
   return r;
 });
-route('DELETE', '/api/reservations/:id', ({ params }) => {
+route('DELETE', '/api/reservations/:id', async ({ params }) => {
   find(db.reservations, params[0], 'Reserva');
   db.reservations = db.reservations.filter((r) => r.id !== params[0]);
-  save(db);
+  await save(db);
   return { ok: true };
 });
 
@@ -265,8 +282,9 @@ const server = http.createServer((req, res) => {
     raw += c;
     if (raw.length > 1e6) req.destroy();
   });
-  req.on('end', () => {
+  req.on('end', async () => {
     try {
+      await ensureReady();
       for (const r of routes) {
         const m = url.pathname.match(r.re);
         if (r.method === req.method && m) {
@@ -278,7 +296,7 @@ const server = http.createServer((req, res) => {
               throw new L.ValidationError('JSON inválido.');
             }
           }
-          const out = r.fn({ params: m.slice(1), body, query: url.searchParams });
+          const out = await r.fn({ params: m.slice(1), body, query: url.searchParams });
           return Array.isArray(out) && typeof out[0] === 'number' ? send(out[0], out[1]) : send(200, out);
         }
       }
@@ -291,6 +309,9 @@ const server = http.createServer((req, res) => {
   });
 });
 
-if (require.main === module) server.listen(PORT, () => console.log(`Pousada rodando em http://localhost:${PORT}`));
+if (require.main === module) {
+  ensureReady().finally(() => {
+    server.listen(PORT, () => console.log(`Pousada rodando em http://localhost:${PORT}`));
+  });
+}
 module.exports = server;
-
