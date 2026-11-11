@@ -206,6 +206,18 @@ function startEdit(id) {
 $('#resCancel').onclick = () => { stopEdit(); updateAvailable(); };
 $('#resFilter').onchange = renderResTable;
 
+let priceEditId = null;
+function savePrice(id) {
+  const raw = String($('#priceInput').value).replace(',', '.').trim();
+  const val = Number(raw);
+  if (raw === '' || !Number.isFinite(val) || val < 0) return toast('Valor inválido. Digite um número maior ou igual a zero.', true);
+  act(async () => { await api('PUT', `/api/reservations/${id}`, { total: val }); priceEditId = null; }, 'Valor da reserva atualizado!');
+}
+$('#resTable').addEventListener('keydown', (e) => {
+  if (e.target.id !== 'priceInput') return;
+  if (e.key === 'Enter') { e.preventDefault(); savePrice(priceEditId); }
+  if (e.key === 'Escape') { priceEditId = null; renderResTable(); }
+});
 function renderResTable() {
   const f = $('#resFilter').value;
   const rows = state.reservations
@@ -217,7 +229,7 @@ function renderResTable() {
       <td>${esc(guestName(r.guestId))}${r.notes ? ` <span class="muted" title="${esc(r.notes)}">📝</span>` : ''}</td>
       <td>${esc(roomName(r.roomId))}</td><td>${fmt(r.checkIn)}</td><td>${fmt(r.checkOut)}</td>
       <td>${r.people}</td>
-      <td>${money(r.total)} <button class="small" data-act="change-price" data-id="${r.id}" title="Alterar valor da reserva (descontos, promoções)">✏️</button></td>
+      <td>${r.id === priceEditId ? `<input type="number" class="price-input" id="priceInput" min="0" step="0.01" value="${r.total}" style="width:110px"> <button class="small" data-act="price-save" data-id="${r.id}">Salvar</button><button class="small" data-act="price-cancel">✕</button>` : `${money(r.total)} <button class="small" data-act="change-price" data-id="${r.id}" title="Alterar valor da reserva (descontos, promoções)">✏️ Alterar valor</button>`}</td>
       <td><span class="badge ${r.status}">${r.status}</span></td>
       <td>${r.status === 'confirmada' ? btn(r.id, 'hospedado', 'Check-in') + btn(r.id, 'cancelada', 'Cancelar', 'danger') : ''}
           ${r.status === 'hospedado' ? btn(r.id, 'finalizada', 'Check-out') : ''}
@@ -230,19 +242,9 @@ $('#resTable').addEventListener('click', (e) => {
   const b = e.target.closest('button'); if (!b) return;
   if (b.dataset.act === 'status') act(() => api('PUT', `/api/reservations/${b.dataset.id}`, { status: b.dataset.st }), 'Reserva atualizada.');
   if (b.dataset.act === 'edit') startEdit(b.dataset.id);
-  if (b.dataset.act === 'change-price') {
-    const r = state.reservations.find((x) => x.id === b.dataset.id);
-    if (!r) return;
-    const input = prompt(`Modificar valor da reserva (${guestName(r.guestId)}) - Quarto: ${roomName(r.roomId)}\nValor atual: ${money(r.total)}\nInforme o novo valor total (R$):`, r.total);
-    if (input === null) return;
-    const clean = input.replace(',', '.').trim();
-    const val = Number(clean);
-    if (!Number.isFinite(val) || val < 0 || clean === '') {
-      toast('Valor inválido. Digite um número maior ou igual a zero.', true);
-      return;
-    }
-    act(() => api('PUT', `/api/reservations/${r.id}`, { total: val }), 'Valor da reserva atualizado!');
-  }
+  if (b.dataset.act === 'change-price') { priceEditId = b.dataset.id; renderResTable(); const i = $('#priceInput'); i.focus(); i.select(); }
+  if (b.dataset.act === 'price-cancel') { priceEditId = null; renderResTable(); }
+  if (b.dataset.act === 'price-save') savePrice(b.dataset.id);
   if (b.dataset.act === 'del' && confirm('Excluir esta reserva?')) act(() => api('DELETE', `/api/reservations/${b.dataset.id}`), 'Reserva excluída.');
 });
 
